@@ -1,50 +1,62 @@
 import React, { useEffect, useState } from 'react';
 import { GraphCanvas } from 'reagraph';
-
+import WalletCard from './walletCard';
+import './App.css';
 
 function transformData(walletData) {
-  const nodes = new Set();
-  const edges = [];
+  let edges = [];
 
-  // Process transactions to create nodes and edges
-  walletData.txs.slice(30, 35).forEach((tx, index) => {
+  // Process transactions to create edges first
+  walletData.txs.forEach((tx, index) => {
     if (tx.inputs) {
       tx.inputs.forEach(input => {
-        if (input.prev_out && input.prev_out.addr) {
-          nodes.add(input.prev_out.addr);
-          nodes.add(walletData.address); // Assuming this is always present
-
-          // Check and add only if value is defined and nodes are distinct
-          if (input.prev_out.value && input.prev_out.addr !== walletData.address) {
-            edges.push({
-              source: input.prev_out.addr,
-              target: walletData.address,
-              label: `Tx ${index + 1}: ${input.prev_out.value} satoshis`
-            });
-          }
+        if (input.prev_out && input.prev_out.addr && input.prev_out.value && input.prev_out.addr !== walletData.address) {
+          edges.push({
+            source: input.prev_out.addr,
+            target: walletData.address,
+            label: `Tx ${index + 1}: ${input.prev_out.value} satoshis`
+          });
         }
       });
     }
 
     if (tx.out) {
       tx.out.forEach(output => {
-        if (output.addr) {
-          nodes.add(output.addr);
-          // Create an edge if the output is to a different address
-          if (output.value && walletData.address !== output.addr) {
-            edges.push({
-              source: walletData.address,
-              target: output.addr,
-              label: `Tx ${index + 1}: ${output.value} satoshis`
-            });
-          }
+        if (output.addr && output.value && walletData.address !== output.addr) {
+          edges.push({
+            source: walletData.address,
+            target: output.addr,
+            label: `Tx ${index + 1}: ${output.value} satoshis`
+          });
         }
       });
     }
   });
 
-  return { nodes: Array.from(nodes).map(node => ({ id: node, label: node })), edges };
+  // Build a set of nodes from edges
+  const nodeCountMap = new Map();
+  edges.forEach(edge => {
+    nodeCountMap.set(edge.source, (nodeCountMap.get(edge.source) || 0) + 1);
+    nodeCountMap.set(edge.target, (nodeCountMap.get(edge.target) || 0) + 1);
+  });
+
+  // Sort nodes by their connection count (degree) and limit to the first 60
+  const sortedNodes = Array.from(nodeCountMap.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 60)
+    .map(entry => entry[0]);
+
+  // Filter edges to include only those that have both nodes in the sortedNodes list
+  edges = edges.filter(edge => sortedNodes.includes(edge.source) && sortedNodes.includes(edge.target));
+
+  // Map the sorted node list to node objects
+  const nodes = sortedNodes.map(node => ({ id: node, label: node }));
+
+  return { nodes, edges };
 }
+
+
+
 
 
 
@@ -53,16 +65,51 @@ function App() {
   const [data, setData] = useState({ nodes: [], edges: [] });
   const [tooltip, setTooltip] = useState('');
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  const [currentWallet, setCurrentWallet] = useState(null);
+  const [showGraph, setShowGraph] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    fetch('/wallet.json')
-      .then(response => response.json())
-      .then(jsonData => {
-        const transformedData = transformData(jsonData); 
-        console.log(transformedData.edges);  // Verify edge structure and content
-        setData(transformedData);
-      });
-  }, []);
+    if (currentWallet) {
+      setLoading(true);
+      setError('');
+      console.log(`Current wallet file: ${currentWallet.walletFile}`);  // This should log a string, not an object
+      fetch(`/${currentWallet}`)
+        .then(response => {
+          console.log('Response:', response);
+          if (!response.ok) {
+            return response.text().then(text => {
+              throw new Error('Failed to fetch, server responded with: ' + text);
+            });
+          }
+          return response.json();
+        })
+        .then(jsonData => {
+          const transformedData = transformData(jsonData);
+          setData(transformedData);
+          setLoading(false);
+        })
+        .catch(error => {
+          console.error('Failed to fetch data:', error);
+          setError('Failed to load data');
+          setLoading(false);
+        });
+    }
+  }, [currentWallet]);
+
+  const selectWallet = (walletFile) => {
+    setCurrentWallet(walletFile);
+    setShowGraph(true);  // Show the graph when a wallet is selected
+  };
+  const handleBackButtonClick = () => {
+    setShowGraph(false);  // Hide the graph and show the wallet cards
+  };
+
+
+  // if (loading) return <div>Loading...</div>;
+  // if (error) return <div>Error: {error}</div>;
 
   const handleNodePointerOver = (node, event) => {
     setTooltip(`${node.id}: ${node.label.substring(0, 5)}`);
@@ -78,7 +125,7 @@ function App() {
       console.log('Event does not contain clientX and clientY properties');
     }
   };
-  
+
 
   const handlePointerOut = () => {
     setTooltip('');
@@ -87,30 +134,26 @@ function App() {
 
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
-      <GraphCanvas
-        nodes={data.nodes}
-        edges={data.edges}
-        onNodePointerOver={handleNodePointerOver}
-        onNodePointerOut={handlePointerOut}
-        onEdgePointerOver={handleEdgePointerOver}
-        onEdgePointerOut={handlePointerOut}
-      />
-      {tooltip && (
-        <div
-          style={{
-            position: 'absolute',
-            left: `${tooltipPos.x}px`,
-            top: `${tooltipPos.y}px`,
-            padding: '5px 10px',
-            backgroundColor: 'rgba(255, 255, 255, 0.9)',
-            border: '1px solid #ccc',
-            borderRadius: '5px',
-            pointerEvents: 'none',
-          }}
-        >
-          {tooltip}
+      {!showGraph && (
+        <div className="wallet-cards-container" style={{ position: 'absolute', width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          {['wallet1.json', 'wallet2.json', 'wallet3.json', 'wallet4.json'].map(walletFile => (
+            <WalletCard key={walletFile} walletFile={walletFile} onSelectWallet={selectWallet} />
+          ))}
         </div>
       )}
+      {currentWallet ?
+
+        (showGraph && <GraphCanvas
+          nodes={data.nodes}
+          edges={data.edges}
+          onNodePointerOver={handleNodePointerOver}
+          onNodePointerOut={handlePointerOut}
+          onEdgePointerOver={handleEdgePointerOver}
+          onEdgePointerOut={handlePointerOut}
+        />
+
+        ) : <div></div>}
+
     </div>
   );
 }

@@ -36,3 +36,52 @@
     transform: rotate(360deg);
   }
 }
+
+.wallet-card {
+  max-width: 90%;
+  height: auto;
+  aspect-ratio: 3 / 4;
+  border-radius: 20px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  transition: transform 0.3s;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background-color: white;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.wallet-card:hover {
+  transform: scale(1.05);
+}
+
+.wallet-card img {
+  width: 100%;
+  height: 60%;
+  object-fit: cover;
+}
+
+.wallet-card p {
+  font-size: 16px;
+  color: #333;
+  padding: 10px;
+}
+
+@media (min-width: 600px) {
+  .wallet-card {
+    width: 300px;
+  }
+}
+button {
+  background: none;
+  border: none;
+  padding: 10px;
+  cursor: pointer;
+}
+
+button:hover {
+  background-color: rgba(255, 255, 255, 0.8);
+}
